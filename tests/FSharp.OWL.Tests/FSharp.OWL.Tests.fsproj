@@ -66,6 +66,9 @@
   <ItemGroup>
     <Compile Include="Tests.fs" />
     <None Include="paket.references" />
+    <None Include="wine.ttl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />

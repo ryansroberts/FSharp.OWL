@@ -15,7 +15,7 @@ type fixture () =
     member public x.``Expression tree for sample RDF`` () =
         let (++) a b = Path.Combine(a, b)
         let resolutionFolder = ""
-        let outputFolder =  "./expected"
+        let outputFolder =  __SOURCE_DIRECTORY__ + "/expected"
         printf "write expressions to %s\r\n" outputFolder
         let assemblyName = "FsRdf.dll"
 
@@ -28,7 +28,7 @@ type fixture () =
             |> Console.WriteLine
 
         let dumpAll inst = 
-            dump false false Net40 true inst
+            dump false false Net40 false inst
 
         let args = { 
           Path = __SOURCE_DIRECTORY__ ++ "wine.ttl"
