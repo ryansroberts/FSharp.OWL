@@ -2,7 +2,6 @@ module Generator
 
 open ProviderImplementation.ProvidedTypes
 open Schema
-open FsRdf
 open Prefixes
 open System.Reflection
 open Microsoft.FSharp.Quotations
@@ -30,6 +29,7 @@ let ignoreBlank nx =
     nx |> Seq.filter (function 
               | Node.Uri(Blank(b)) -> false
               | _ -> true)
+
 
 let typeName (ns : prefixes) (uri : Schema.Uri) = 
     let uri = 
@@ -63,7 +63,6 @@ let vdsUri (g : IGraph) (u : Schema.Uri) =
 
 let rec classNode ns uri ont = 
     let cs = ont (string uri)
-    printf "%A" cs
     let cls = ProvidedTypeDefinition(className ns cs, Some typeof<OntologyNode>)
     let ctor = ProvidedConstructor([])
     let ctorInfo = 

@@ -538,6 +538,38 @@
       </ItemGroup>
     </Otherwise>
   </Choose>
+  <PropertyGroup>
+    <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
+  </PropertyGroup>
+  <Choose>
+    <When Condition="'$(VisualStudioVersion)' == '11.0'">
+      <PropertyGroup Condition="Exists('$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.0\Framework\v4.0\Microsoft.FSharp.Targets')">
+        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.0\Framework\v4.0\Microsoft.FSharp.Targets</FSharpTargetsPath>
+      </PropertyGroup>
+    </When>
+    <Otherwise>
+      <PropertyGroup Condition="Exists('$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets')">
+        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets</FSharpTargetsPath>
+      </PropertyGroup>
+    </Otherwise>
+  </Choose>
+  <Import Project="$(FSharpTargetsPath)" Condition="Exists('$(FSharpTargetsPath)')" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.       Other similar extension points exist, see Microsoft.Common.targets.  <Target Name="BeforeBuild">  </Target>  <Target Name="AfterBuild">  </Target>  -->
+  <Import Project="..\..\.paket\paket.targets" />
+  <ItemGroup>
+    <Compile Include="ProvidedTypes/Signatures/ProvidedTypes.fsi" />
+    <Compile Include="ProvidedTypes/Code/ProvidedTypes.fs" />
+    <Compile Include="ProvidedTypes/Code/Debug.fs" />
+    <Compile Include="Gubbins.fs" />
+    <Compile Include="Schema.fs" />
+    <Compile Include="Reasoning.fs" />
+    <Compile Include="Queryable.fs" />
+    <Compile Include="Store.fs" />
+    <Compile Include="Generator.fs" />
+    <Compile Include="Provider.fs" />
+    <Compile Include="TypeProviderInstantiation.fs" />
+    <None Include="paket.references" />
+  </ItemGroup>
   <ItemGroup>
     <Reference Include="Cognitum.OwlApi.Net.HermiT">
       <HintPath>..\..\lib\owlapi.net_release_1_0_0\Cognitum.OwlApi.Net.HermiT.dll</HintPath>
@@ -572,35 +604,4 @@
     <Reference Include="System.Numerics" />
     <Reference Include="System.Xml" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Include="ProvidedTypes/Signatures/ProvidedTypes.fsi" />
-    <Compile Include="ProvidedTypes/Code/ProvidedTypes.fs" />
-    <Compile Include="ProvidedTypes/Code/Debug.fs" />
-    <Compile Include="Gubbins.fs" />
-    <Compile Include="RDF.fs" />
-    <Compile Include="Reasoning.fs" />
-    <Compile Include="Queryable.fs" />
-    <Compile Include="Store.fs" />
-    <Compile Include="Generator.fs" />
-    <Compile Include="Provider.fs" />
-    <Compile Include="TypeProviderInstantiation.fs" />
-  </ItemGroup>
-  <PropertyGroup>
-    <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
-  </PropertyGroup>
-  <Choose>
-    <When Condition="'$(VisualStudioVersion)' == '11.0'">
-      <PropertyGroup Condition="Exists('$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.0\Framework\v4.0\Microsoft.FSharp.Targets')">
-        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.0\Framework\v4.0\Microsoft.FSharp.Targets</FSharpTargetsPath>
-      </PropertyGroup>
-    </When>
-    <Otherwise>
-      <PropertyGroup Condition="Exists('$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets')">
-        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets</FSharpTargetsPath>
-      </PropertyGroup>
-    </Otherwise>
-  </Choose>
-  <Import Project="$(FSharpTargetsPath)" Condition="Exists('$(FSharpTargetsPath)')" />
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.       Other similar extension points exist, see Microsoft.Common.targets.  <Target Name="BeforeBuild">  </Target>  <Target Name="AfterBuild">  </Target>  -->
-  <Import Project="..\..\.paket\paket.targets" />
 </Project>

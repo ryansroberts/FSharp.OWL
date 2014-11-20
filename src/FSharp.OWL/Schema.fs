@@ -38,22 +38,25 @@ type Object =
 
 type Binding =
 | Binding of string
+| Wildcard
 
 type QueryType =
 | Select of Binding list
 
 type QueryPattern =
 | Binding of Binding
+| OfType 
 | Node of Node  
 with static member uri u = QueryPattern.Node(u)
-     static member a = QueryPattern.uri (Node.Uri(Uri.Uri("http://www.w3.org/2000/01/rdf-schema#type")))
      static member var v = QueryPattern.Binding(Binding.Binding v)
      
 type BGP =
 | BGP of QueryPattern * QueryPattern * QueryPattern
-with static member a b t = BGP(QueryPattern.var b,QueryPattern.a,QueryPattern.uri t)
+with static member a b t = BGP(QueryPattern.var b,QueryPattern.OfType,QueryPattern.uri t)
      static member anIndividual b = BGP.a b (Node.Uri(Uri.Uri("http://www.w3.org/2002/07/owl#Individual")))
- 
+     static member anyStatement s p o = BGP(QueryPattern.Binding(Binding.Binding s),
+                                            QueryPattern.Binding(Binding.Binding p),
+                                            QueryPattern.Binding(Binding.Binding o))
 type Where=
 | Where of BGP list
 

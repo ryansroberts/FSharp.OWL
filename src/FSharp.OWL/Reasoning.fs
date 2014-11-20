@@ -13,7 +13,6 @@ open org.semanticweb.owlapi.reasoner.structural
 open uk.ac.manchester.cs.owlapi.modularity
 open uk.ac.manchester.cs.owl.owlapi
 
-
 type Ontology = 
     | Ontology of OWLOntology
 
@@ -22,24 +21,20 @@ type Uri with
     static member fromHasUri (has : HasIRI) = Uri.Uri((has.getIRI()).toString())
 
 let iter<'a> (nx : java.util.Set) = 
-        [ let i = nx.iterator()
-          while i.hasNext() do
-              yield i.next() :?> 'a ]
+    [ let i = nx.iterator()
+      while i.hasNext() do
+          yield i.next() :?> 'a ]
 
+let rec splitIntersections (c : obj) = 
+    [ match c with
+      | :? OWLObjectIntersectionOf as x -> 
+          yield! x.getClassesInSignature()
+                 |> iter<OWLEntity>
+                 |> List.map splitIntersections
+                 |> List.concat
+      | :? HasIRI as x -> yield Uri.fromHasUri x ]
 
-let rec splitIntersections (c:obj) = [
-    match c with 
-    | :? OWLObjectIntersectionOf as x ->
-        yield! x.getClassesInSignature() 
-                |> iter<OWLEntity>
-                |> List.map splitIntersections 
-                |> List.concat
-    | :? HasIRI as x -> yield Uri.fromHasUri x
-]
-
-let extractIri (nx : java.util.Set) = 
-    iter<HasIRI> nx
-    |> List.map Uri.fromHasUri
+let extractIri (nx : java.util.Set) = iter<HasIRI> nx |> List.map Uri.fromHasUri
 
 let extractDataProperties (o : OWLOntology) (nx : java.util.Set) = 
     iter<OWLObjectProperty> nx
@@ -79,22 +74,23 @@ let dataPropertiesFrom (o : OWLOntology) (c : OWLClass) =
                    |> List.map Uri.fromHasUri
                    |> Set.ofList)))
     |> List.concat
-    |> Set.ofList 
+    |> Set.ofList
 
-
-let subTypes (o:OWLOntology) (c:OWLClass) =
-    c.getSubClasses(o)
+let subTypes (o : OWLOntology) (c : OWLClass) = 
+    c.getSubClasses (o)
     |> iter<OWLEntity>
     |> List.map splitIntersections
     |> List.concat
 
-type Reasoner () =
+type Reasoner() = 
     member x.manager = OWLManager.createOWLOntologyManager()
+    
     member x.loadFile (p : string) = 
         try 
             Ontology(x.manager.loadOntologyFromOntologyDocument (java.io.File(p)))
         with :? OWLOntologyAlreadyExistsException as e -> 
             Ontology(x.manager.getOntology (e.getDocumentIRI())) |> x.reason
+    
     member private x.reason o = 
         match o with
         | Ontology(o) -> 
@@ -103,22 +99,21 @@ type Reasoner () =
             let reasoner = reasonerFactory.createReasoner (o, config)
             reasoner.precomputeInferences()
             Ontology o
+    
     member x.schema o (iri : string) = 
         match o with
         | Ontology.Ontology(o) -> 
             let f = x.manager.getOWLDataFactory()
             let cs = (f.getOWLClass(IRI.create iri).asOWLClass())
-
             { Uri = Uri.Uri(iri)
               Label = [] |> Set.ofList
-              ObjectProperties =  propertiesFrom o cs
+              ObjectProperties = propertiesFrom o cs
               DataProperties = Set.empty
-              EquivalentClasses =  cs.getEquivalentClasses(o) 
-                                    |> iter<obj>
-                                    |> List.map splitIntersections 
-                                    |> List.concat
-                                    |> Set.ofList
+              EquivalentClasses = 
+                  cs.getEquivalentClasses (o)
+                  |> iter<obj>
+                  |> List.map splitIntersections
+                  |> List.concat
+                  |> Set.ofList
               Supertypes = Set.empty
-              Subtypes = subTypes o cs |> Set.ofList
-            }
-
+              Subtypes = subTypes o cs |> Set.ofList }
