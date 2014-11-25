@@ -10,6 +10,14 @@ open System.Linq
 open System.Linq.Expressions
 open Store
 
+
+type GenerationContext = {
+  ns : prefixes
+  uri: Uri
+  ont: string -> Class
+  types: Map<string,ProvidedTypeDefinition>
+}
+
 type OntologyNode(uri : string) = 
     member x.Uri = Node.Uri(Schema.Uri uri)
 
@@ -61,48 +69,52 @@ let vdsUri (g : IGraph) (u : Schema.Uri) =
     | Uri.Uri(s) -> g.CreateUriNode(System.Uri s)
     | Uri.QName(p, n) -> g.CreateUriNode(System.Uri(p + n))
 
-let rec classNode ns uri ont = 
-    let cs = ont (string uri)
-    let cls = ProvidedTypeDefinition(className ns cs, Some typeof<OntologyNode>)
+let rec classNode (ctx:GenerationContext) =
+      
+    let cs = ctx.ont (string ctx.uri)
+    let cls = ProvidedTypeDefinition(className ctx.ns cs, Some typeof<OntologyNode>)
     let ctor = ProvidedConstructor([])
     let ctorInfo = 
         typeof<Class>.GetConstructor(BindingFlags.Public ||| BindingFlags.Instance, null, [| typeof<string> |], null)
-    ctor.BaseConstructorCall <- fun args -> ctorInfo, [ <@@ (uri) @@> ]
+    ctor.BaseConstructorCall <- fun args -> ctorInfo, [ <@@ (ctx.uri) @@> ]
     ctor.InvokeCode <- fun args -> <@@ () @@>
     cls.AddMember ctor
     let sc = ProvidedTypeDefinition("SubClasses", Some typeof<obj>)
     cls.AddMember sc
+    
     (fun () -> 
     [ for sub in cs.Subtypes do
-          yield classNode ns sub ont ])
+          yield classNode {ctx with uri = sub} ])
     |> sc.AddMembersDelayed
     let op = ProvidedTypeDefinition("ObjectProperties", Some typeof<obj>)
     cls.AddMember op
     (fun () -> 
     [ for (p, r) in cs.ObjectProperties do
-          yield objectPropertyType ns p r ont ])
+          yield objectPropertyType {ctx with uri = p} ])
     |> op.AddMembersDelayed
     let op = ProvidedTypeDefinition("DataProperties", Some typeof<obj>)
     cls.AddMember op
     (fun () -> 
     [ for (p, r) in cs.DataProperties do
-          yield dataPropertyType ns p r ont ])
+          yield dataPropertyType {ctx with uri=p} ])
     |> op.AddMembersDelayed
     (fun () -> 
     [ for (p, r) in cs.ObjectProperties do
-          yield objectProperty ns p r ont ])
+          yield objectProperty {ctx with uri=p} ])
     |> cls.AddMembersDelayed
     cls
 
-and objectProperty ns p r ont = 
-    let prop = ProvidedProperty(typeName ns p, typeof<Schema.Uri>)
-    prop.GetterCode <- fun args -> <@@ p @@>
+and objectProperty (ctx:GenerationContext) =
+    let prop = ProvidedProperty(typeName ctx.ns ctx.uri, typeof<Schema.Uri>)
+    prop.GetterCode <- fun args -> <@@ ctx.uri @@>
     prop
 
-and objectPropertyType ns p r ont = ProvidedTypeDefinition(typeName ns p, Some typeof<obj>)
+and objectPropertyType (ctx:GenerationContext) =
+    ProvidedTypeDefinition(typeName ctx.ns ctx.uri, Some typeof<obj>)
 
-and dataPropertyType ns p r ont = ProvidedTypeDefinition(typeName ns p, Some typeof<obj>)
+and dataPropertyType (ctx:GenerationContext) =
+    ProvidedTypeDefinition(typeName ctx.ns ctx.uri, Some typeof<obj>)
 
 let root (t : ProvidedTypeDefinition) ns root ont = 
-    t.AddMember(classNode ns root ont)
+    t.AddMember (classNode {ns=ns;uri=root;ont=ont;types=Map.empty})
     t

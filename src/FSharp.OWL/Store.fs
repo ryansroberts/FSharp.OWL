@@ -33,9 +33,6 @@ module Store =
             | Node.Literal(Schema.Literal(s)) -> t.SetLiteral(n, s)
             | Node.Uri(Blank(s)) -> t.SetBlankNode(s)
     
-
-   
-
     let translate (q : Sparql)= 
         let pattern = 
             function 
