@@ -563,8 +563,8 @@
     <Compile Include="Gubbins.fs" />
     <Compile Include="Schema.fs" />
     <Compile Include="Reasoning.fs" />
-    <Compile Include="Queryable.fs" />
     <Compile Include="Store.fs" />
+    <Compile Include="Queryable.fs" />
     <Compile Include="Generator.fs" />
     <Compile Include="Provider.fs" />
     <Compile Include="TypeProviderInstantiation.fs" />

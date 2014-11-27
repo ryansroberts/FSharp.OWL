@@ -31,7 +31,7 @@ type fixture() =
         
         let args = 
             { Path = __SOURCE_DIRECTORY__ ++ "wine.ttl"
-              BaseUri = "http://www.w3.org/2002/07/owl#thing"
+              BaseUri = "http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#WhiteBurgundy"
               NSMap = """wine:http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#""" }
         dumpAll (TypeProviderInstantiation.FileProvider(args))
     
@@ -39,7 +39,7 @@ type fixture() =
     member public x.``Generate select query``() =
         let wineStore = loadFile (__SOURCE_DIRECTORY__ ++ "wine.ttl")
         let rs = resultset (QueryType.Select [Binding.Wildcard],
-                            Where [BGP.a "s" (Node.Uri (Uri.Uri "http://www.w3.org/2002/07/owl#Class"))]) wineStore
+                            Where [BGP.a "s" (Node.Uri (Uri.Uri "http://www.w3.org/2002/07/owl#NamedIndividual"))]) wineStore
         printfn "%A" rs
 
         

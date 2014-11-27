@@ -72,6 +72,11 @@ type Property = {
   Range : Uri
   }
 
+type ClassExpression =
+| Union of ClassExpression
+| HasValue of Uri
+| SomeValuesFrom of Uri
+
 type ResultGraph (g:IGraph) =
   let prefix q = """prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
             prefix owl:  <http://www.w3.org/2002/07/owl#>

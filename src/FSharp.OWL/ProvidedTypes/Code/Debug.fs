@@ -487,7 +487,6 @@ module internal Debug =
         add t
 
         let currentDepth = ref 0
-
         while pending.Count <> 0 && !currentDepth <= maxDepth do
             let pendingForThisDepth = new List<_>(pending)
             pending.Clear()
@@ -510,6 +509,8 @@ module internal Debug =
                     print " : "
                     print (toString true t.BaseType)
                 println()
+
+
                 t.GetMembers() 
                 |> Seq.sortBy (fun m -> m.Name)
                 |> Seq.iter printMember

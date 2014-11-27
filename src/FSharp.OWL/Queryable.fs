@@ -1,5 +1,4 @@
-namespace FsRdf
-
+namespace global 
 open System.Linq
 open System.Linq.Expressions
 open System.Collections
@@ -105,3 +104,24 @@ module Helpers =
         match e with
         | MethodCall(_, MethodWithName "Select", [ body; iterVar ]) -> Some(body, iterVar)
         | _ -> None
+
+open Schema
+module OWLQueryable =
+    let provider(store:Store.store) = {
+    new System.Linq.IQueryProvider with 
+        member x.CreateQuery(e:Expression) : IQueryable = failwithf "CreateQuery, e = %A" e
+        member x.CreateQuery<'a>(e:Expression) : IQueryable<'a> = null
+        member x.Execute(e:Expression) : obj = failwith "Execute, untyped: nyi"
+        member x.Execute<'a>(e:Expression) : 'a = Expression.Lambda(e).Compile().DynamicInvoke() :?> 'a
+    }
+    
+    let create<'a> (store:Store.store) = {
+       new IQueryable<'a> with
+             member x.Provider = provider store
+             member x.Expression =  Expression.Constant(x,typeof<IQueryable<'a>>) :> Expression 
+             member x.ElementType = typeof<'a>
+             member x.GetEnumerator() : IEnumerator<'a> = Seq.empty.GetEnumerator()
+             member x.GetEnumerator() : IEnumerator = (x :> seq<'a>).GetEnumerator() :> System.Collections.IEnumerator
+    }
+
+    
