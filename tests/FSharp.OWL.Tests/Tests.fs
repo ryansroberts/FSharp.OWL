@@ -32,7 +32,7 @@ type fixture() =
         let args = 
             { Path = __SOURCE_DIRECTORY__ ++ "wine.ttl"
               BaseUri = "http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#WhiteBurgundy"
-              NSMap = """wine:http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#""" }
+              NSMap = """base:http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#""" }
         dumpAll (TypeProviderInstantiation.FileProvider(args))
     
     [<Test>]
