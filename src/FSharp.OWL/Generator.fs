@@ -18,7 +18,7 @@ type GenerationContext =
       ont : string -> Class }
 
 type OntologyNode(uri : string) = 
-    member x.Uri = Node.Uri(Schema.Uri uri)
+    member x.Uri = Schema.Uri uri
 
 type Class(uri) = 
     inherit OntologyNode(uri)
@@ -32,8 +32,8 @@ type ObjectProperty(uri) =
 type DataProperty(uri) = 
     inherit OntologyNode(uri)
 
-type Restriction  = class end
-
+type Restriction(uri) = 
+    inherit OntologyNode(uri)
 
 let ignoreBlank nx = 
     nx |> Seq.filter (function 
@@ -44,18 +44,15 @@ let typeName (ns : prefixes) (uri : Uri) =
     let uri = 
         match uri with
         | Schema.Uri(uri) -> uri
+    
     let uri = System.Uri uri
     let matchingPrefix = List.tryFind (fun (p, u) -> uri.ToString().StartsWith(string u))
-    match uri.Fragment, ns |> matchingPrefix  with
-    | NotEmpty fragment,Some ("base",_) ->
-       fragment.Substring(1)
-    | NotEmpty fragment,Some (prefix,_) ->
-       sprintf "%s:%s" prefix (fragment.Substring(1))
-    | fragment,Some ("base",_) ->
-       uri.Segments.[uri.Segments.Length]
-    | fragment,Some (prefix,_) ->
-       sprintf "%s:%s" prefix (uri.Segments.[uri.Segments.Length])
-    | _,_ -> string uri
+    match uri.Fragment, ns |> matchingPrefix with
+    | NotEmpty fragment, Some("base", _) -> fragment.Substring(1)
+    | NotEmpty fragment, Some(prefix, _) -> sprintf "%s:%s" prefix (fragment.Substring(1))
+    | fragment, Some("base", _) -> uri.Segments.[uri.Segments.Length]
+    | fragment, Some(prefix, _) -> sprintf "%s:%s" prefix (uri.Segments.[uri.Segments.Length])
+    | _, _ -> string uri
 
 let className (ns : prefixes) (cls : Schema.Class) = 
     let uris = 
@@ -66,12 +63,10 @@ let className (ns : prefixes) (cls : Schema.Class) =
     else sprintf "%s≡%s" (typeName ns cls.Uri) (uris |> String.concat "≡")
 
 let restrictionName (ns : prefixes) (range : Set<Uri>) = 
-    if range.Count = 1 then typeName ns (range |> Seq.head)
-    else 
-        range
-        |> Set.toArray
-        |> Array.map (fun u -> (string u))
-        |> String.concat " . "
+    range
+    |> Set.toArray
+    |> Array.map (fun u -> (string u))
+    |> String.concat " . "
 
 let vdsUri (g : IGraph) (u : Schema.Uri) = 
     match u with
@@ -81,36 +76,27 @@ let vdsUri (g : IGraph) (u : Schema.Uri) =
 let objectProperty (ctx : GenerationContext) r = 
     let restriction = ProvidedTypeDefinition(restrictionName ctx.ns r, Some typeof<obj>)
     let ctor = restriction.GetConstructors() |> Seq.exactlyOne
-    let prop = ProvidedProperty(typeName ctx.ns ctx.uri, restriction)
-    prop.GetterCode <- fun args -> <@@ Expr.NewObject(ctor, []) @@>
-    (prop, restriction)
+    let n = typeName ctx.ns ctx.uri
+    let field = ProvidedField("_" + n, restriction)
+    field.SetFieldAttributes(FieldAttributes.Private)
+    let prop = ProvidedProperty(n, restriction, GetterCode = (fun [ this ] -> <@@ null @@>))
+    (prop, field, restriction)
 
-let individualParams ctx cs = 
-    cs.ObjectProperties
-    |> Seq.map (fun (p, r) -> ProvidedParameter(typeName ctx.ns p, typeof<Uri>))
-    |> Seq.toList
-
-let individualType (ctx : GenerationContext) cs = 
-    let t = ProvidedTypeDefinition((typeName ctx.ns ctx.uri), Some typeof<Individual>)
-    let ctor = ProvidedConstructor(individualParams ctx cs)
+let individualType (ctx : GenerationContext) cs (rx : ProvidedProperty list) = 
+    let t = ProvidedTypeDefinition("Individual", Some typeof<Individual>)
+    
+    let ctor = 
+        ProvidedConstructor
+            (ProvidedParameter("self", typeof<Schema.Uri>) 
+             :: [ for r in rx -> ProvidedParameter(r.Name, typeof<Schema.Uri>) ])
+    
     let ctorInfo = 
         typeof<Individual>
             .GetConstructor(BindingFlags.Public ||| BindingFlags.Instance, null, [| typeof<string> |], null)
-    ctor.BaseConstructorCall <- fun args -> ctorInfo, [ <@@ args.[0] @@> ]
-    ctor.InvokeCode <- fun args -> <@@ args.[0] @@>
-    
-    if cs.ObjectProperties.Any() then 
-        let op = ProvidedTypeDefinition("Restrictions", Some typeof<Restriction>)
-        t.AddMember op
-        (fun () -> 
-        [ for (p, r) in cs.ObjectProperties do
-              let (prop, restriction) = objectProperty { ctx with uri = p } r
-              op.AddMember restriction
-              yield prop :> MemberInfo ])
-        |> t.AddMembersDelayed
-
+    ctor.BaseConstructorCall <- fun args -> ctorInfo, [ args.[0] ]
+    ctor.InvokeCode <- fun args -> <@@ args @@>
+    (fun () -> rx) |> t.AddMembersDelayed
     t.AddMember ctor
-
     (ctor, t)
 
 let rec classNode (ctx : GenerationContext) = 
@@ -148,28 +134,25 @@ let rec classNode (ctx : GenerationContext) =
         [ for (p, r) in cs.DataProperties do
               yield dataPropertyType { ctx with uri = p } r ])
         |> op.AddMembersDelayed
-    if cs.ObjectProperties.Any() then 
-        let op = ProvidedTypeDefinition("Restrictions", Some typeof<obj>)
-        cls.AddMember op
-        (fun () -> 
-        [ for (p, r) in cs.ObjectProperties do
-              let (prop, restriction) = objectProperty { ctx with uri = p } r
-              op.AddMember restriction
-              yield prop :> MemberInfo ])
-        |> cls.AddMembersDelayed
-    let (ctor, individualType) = individualType ctx cs
-    let individuals = 
-        ProvidedMethod
-            ("Individuals", [ ProvidedParameter("store", typeof<Store.store>) ], 
-             typedefof<IQueryable<_>>.MakeGenericType([| individualType :> System.Type |]), 
-             InvokeCode = (fun args -> <@@ () @@>), IsStaticMethod = true)
-    cls.AddMember individuals
-    let createIndividual = 
-        ProvidedMethod
-            ("CreateIndividual", individualParams ctx cs, individualType, 
-             InvokeCode = (fun args -> <@@ Expr.NewObject(ctor, args) @@>), IsStaticMethod = true)
-    cls.AddMember individualType
-    cls.AddMember createIndividual
+    let op = ProvidedTypeDefinition("Restrictions", Some typeof<obj>)
+    cls.AddMember op
+    (fun () -> 
+    [ let rx = 
+          [ for (p, r) in cs.ObjectProperties do
+                let (prop, field, restriction) = objectProperty { ctx with uri = p } r
+                op.AddMember restriction
+                yield (prop, field) ]
+      
+      let (ctor, individualType) = individualType ctx cs (rx |> List.map fst)
+      let individuals = 
+          ProvidedMethod
+              ("Individuals", [ ProvidedParameter("store", typeof<Store.store>) ], 
+               typedefof<IQueryable<_>>.MakeGenericType([| individualType :> System.Type |]), 
+               InvokeCode = (fun args -> <@@ () @@>), IsStaticMethod = true)
+      yield! rx |> Seq.cast<MemberInfo>
+      yield individuals :> MemberInfo
+      yield individualType :> MemberInfo ])
+    |> cls.AddMembersDelayed
     cls
 
 and objectPropertyType (ctx : GenerationContext) r = ProvidedTypeDefinition(typeName ctx.ns ctx.uri, Some typeof<obj>)
@@ -181,6 +164,6 @@ let root (t : ProvidedTypeDefinition) ns root ont =
         classNode { ns = ns
                     uri = root
                     ont = ont }
-    t.AddMember cls
+    t.AddMembers [ cls ]
     t.AddMember(ProvidedMethod("root", [], cls, InvokeCode = (fun a -> <@@ cls @@>)))
     t

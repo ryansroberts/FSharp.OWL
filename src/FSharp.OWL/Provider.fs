@@ -31,9 +31,9 @@ type Memory(config:TypeProviderConfig) as x =
           let erased = ProvidedTypeDefinition(asm, ns , typeName, Some ( typeof<obj> ))
           let nsmap = Schema.parse nsmap
           let om = OntologyManager ()
-          let (ont,reasoner) = om.loadFile path
-
-          Generator.root erased nsmap (Uri.Uri baseUri) (om.schema ont reasoner)
+          let ctx = Reasoning.ReasoningContext.create (om.loadFile path) 
+                          
+          Generator.root erased nsmap (Uri.Uri baseUri) (om.schema ctx)
         | _ -> raise (ArgumentException (sprintf "Invalid parameters %A" parameters))
           
     op.DefineStaticParameters (parameters,init)

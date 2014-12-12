@@ -67,10 +67,17 @@ open VDS.RDF.Query
 open VDS.RDF.Parsing
 open VDS.RDF.Query.Datasets
 
+type Cardinality =
+| Unspecified
+| Constrained of int * int
+
 type Property = {
   Uri : Uri
   Range : Uri
-  }
+  Cardinality : Cardinality
+}
+
+
 
 type ClassExpression =
 | Union of ClassExpression

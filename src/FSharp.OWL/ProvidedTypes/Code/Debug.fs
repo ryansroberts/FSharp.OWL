@@ -481,7 +481,7 @@ module internal Debug =
                         " -> " + (toString true m.ReturnType)
                     if not signatureOnly then
                         m |> getMethodBody |> printExpr
-
+            
             | _ -> ()
 
         add t
@@ -510,10 +510,14 @@ module internal Debug =
                     print (toString true t.BaseType)
                 println()
 
-
                 t.GetMembers() 
                 |> Seq.sortBy (fun m -> m.Name)
                 |> Seq.iter printMember
+
+                t.GetNestedTypes()
+                |> Seq.sortBy (fun m -> m.Name)
+                |> Seq.iter printMember
+
                 println()
             currentDepth := !currentDepth + 1
     

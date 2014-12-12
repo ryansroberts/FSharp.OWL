@@ -574,6 +574,9 @@
     <Reference Include="Cognitum.OwlApi.Net.HermiT">
       <HintPath>..\..\lib\owlapi.net_release_1_0_0\Cognitum.OwlApi.Net.HermiT.dll</HintPath>
     </Reference>
+    <Reference Include="Cognitum.OwlApi.Net.Pellet">
+      <HintPath>..\..\lib\owlapi.net_release_1_0_0\Reasoners\Pellet\Cognitum.OwlApi.Net.Pellet.dll</HintPath>
+    </Reference>
     <Reference Include="Cognitum.OwlApi.Net.ReasonerInterface">
       <HintPath>..\..\lib\owlapi.net_release_1_0_0\Cognitum.OwlApi.Net.ReasonerInterface.dll</HintPath>
     </Reference>
@@ -598,6 +601,9 @@
     </Reference>
     <Reference Include="owlapi">
       <HintPath>..\..\lib\owlapi.net_release_1_0_0\owlapi.dll</HintPath>
+    </Reference>
+    <Reference Include="pellet">
+      <HintPath>..\..\lib\owlapi.net_release_1_0_0\Reasoners\Pellet\pellet.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />

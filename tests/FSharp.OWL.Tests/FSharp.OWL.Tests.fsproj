@@ -658,17 +658,29 @@
     <Content Include="expected/.placeholder">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="wine.ttl">
+    <Content Include=".placeholder">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include=".placeholder">
+    <Content Include="pizza.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="Cognitum.OwlApi.Net.HermiT">
+      <HintPath>..\..\lib\owlapi.net_release_1_0_0\Cognitum.OwlApi.Net.HermiT.dll</HintPath>
+    </Reference>
+    <Reference Include="Cognitum.OwlApi.Net.Pellet">
+      <HintPath>..\..\lib\owlapi.net_release_1_0_0\Reasoners\Pellet\Cognitum.OwlApi.Net.Pellet.dll</HintPath>
+    </Reference>
+    <Reference Include="hermit">
+      <HintPath>..\..\lib\owlapi.net_release_1_0_0\hermit.dll</HintPath>
+    </Reference>
     <Reference Include="mscorlib" />
     <Reference Include="FSharp.Core, Version=$(TargetFSharpCoreVersion), Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
       <Private>True</Private>
+    </Reference>
+    <Reference Include="pellet">
+      <HintPath>..\..\lib\owlapi.net_release_1_0_0\Reasoners\Pellet\pellet.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />

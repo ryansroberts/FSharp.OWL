@@ -31,7 +31,7 @@ type hydraOntology = LinkedData.Memory<ttl,
 type wineOntology = LinkedData.Memory<ttl,
     "http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#Wine",
     """base:http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#,
-       owl:http://www.w3.org/2002/07/owl,
+       owl:http://www.w3.org/2002/07/owl#,
        food:http://www.w3.org/TR/2003/PR-owl-guide-20031209/food""">
 
 type pizzaOntology = LinkedData.Memory<xml,
@@ -39,13 +39,14 @@ type pizzaOntology = LinkedData.Memory<xml,
                      """base:http://www.co-ode.org/ontologies/pizza/pizza.owl#,
                         owl:http://www.w3.org/2002/07/owl""">
 
-let wines = wineOntology.``base:Wine``
 
-let redWines = query {
-    for wine in wines do
-    where(wine)
-    select wine   
-}
+type wine = wineOntology.Wine
+
+type beaujolais = wineOntology.Wine.SubClasses.Beaujolais
+
+type whiteWine = wineOntology.Wine.SubClasses.WhiteWine
+
+
 
 (**
 Some more info

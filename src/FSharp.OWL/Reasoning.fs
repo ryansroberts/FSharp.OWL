@@ -12,21 +12,58 @@ open org.semanticweb.owlapi.reasoner
 open org.semanticweb.owlapi.reasoner.structural
 open uk.ac.manchester.cs.owlapi.modularity
 open uk.ac.manchester.cs.owl.owlapi
+open org.semanticweb.owlapi.apibinding
+open org.semanticweb.owlapi.model
+open org.semanticweb.owlapi.reasoner
 
 type Ontology = 
     | Ontology of OWLOntology
 
-type Reasoner =
+type Reasoner = 
     | Reasoner of OWLReasoner
+
+type DataFactory = 
+    | Factory of OWLDataFactory
 
 type Uri with
     static member fromIRI (iri : IRI) = Uri.Uri(iri.toString())
     static member fromHasUri (has : HasIRI) = Uri.Uri((has.getIRI()).toString())
 
-let iter<'a> (nx : java.util.Set) = 
-    [ let i = nx.iterator()
-      while i.hasNext() do
-          yield i.next() :?> 'a ]
+let rec iter<'a> (nx : java.util.Set) = 
+    match nx with
+    | :? NodeSet as nx -> iter<'a> (nx.getFlattened())
+    | _ -> 
+        [ let i = nx.iterator()
+          while i.hasNext() do
+              yield i.next() :?> 'a ]
+
+let domainMap (o : OWLOntology) (r : OWLReasoner) (f : OWLDataFactory) = 
+    o.getObjectPropertiesInSignature()
+    |> iter<OWLObjectProperty>
+    |> List.map (fun p -> 
+           let c = f.getOWLObjectSomeValuesFrom (p, f.getOWLThing())
+           match r.getEquivalentClasses(c).getEntities() |> iter<OWLClass> with
+           | [] -> 
+               [ for c in r.getSuperClasses(c, true).getFlattened() |> iter<OWLClass> -> (c, p) ]
+           | ex -> 
+               [ for c in ex -> (c, p) ])
+    |> Seq.concat
+    |> Seq.groupBy (fun (c, p) -> c)
+    |> Seq.map (fun (c, p) -> (c, Seq.map (snd) p))
+    |> Map.ofSeq
+
+type ReasoningContext = 
+    { Ontology : OWLOntology
+      Reasoner : OWLReasoner
+      DataFactory : OWLDataFactory
+      ObjectDomain : Map<OWLClass, OWLObjectProperty seq> }
+    static member create (o, r, f) = 
+        match o, r, f with
+        | Ontology o, Reasoner r, Factory f -> 
+            { Ontology = o
+              Reasoner = r
+              DataFactory = f
+              ObjectDomain = domainMap o r f }
 
 let rec splitIntersections (c : obj) = 
     [ match c with
@@ -39,85 +76,48 @@ let rec splitIntersections (c : obj) =
 
 let extractIri (nx : java.util.Set) = iter<HasIRI> nx |> List.map Uri.fromHasUri
 
-let extractDataProperties (o : OWLOntology) (nx : java.util.Set) = 
-    iter<OWLObjectProperty> nx
-    |> List.map (fun p -> (Uri.Uri((p.getIRI()).ToString()), p.getRanges (o) |> extractIri))
-    |> Set.ofList
-
-let extractObjectProperties (o : OWLOntology) (nx : java.util.Set) = 
-    iter<OWLObjectProperty> nx
-    |> List.map (fun p -> (Uri.Uri((p.getIRI()).ToString()), p.getRanges (o) |> extractIri))
-    |> Set.ofList
-
-let propertiesFrom (o : OWLOntology) (r : OWLReasoner) (c : OWLClass) = 
-    c.getSuperClasses (o)
-    |> iter<OWLClassExpression>
-    |> List.map (fun l -> 
-           l.getObjectPropertiesInSignature()
-           |> iter<OWLObjectProperty>
-           |> List.map (fun p -> 
-                  (Uri.fromHasUri p, 
-                   r.getObjectPropertyRanges(p,true).getFlattened()
-                   |> iter<HasIRI>
-                   |> List.map Uri.fromHasUri
-                   |> Set.ofList)))
+let subTypes ctx (c : OWLClass) = 
+    ctx.Reasoner.getSubClasses(c, true).getFlattened()
+    |> iter<OWLEntity>
+    |> List.map splitIntersections
     |> List.concat
-    |> Set.ofList
 
-let dataPropertiesFrom (o : OWLOntology) (c : OWLClass) = 
-    c.getSuperClasses (o)
-    |> iter<OWLClassExpression>
-    |> List.map (fun l -> 
-           l.getDataPropertiesInSignature()
-           |> iter<OWLProperty>
-           |> List.map (fun p -> 
-                  (Uri.fromHasUri p, 
-                   p.getRanges (o)
-                   |> iter<HasIRI>
-                   |> List.map Uri.fromHasUri
-                   |> Set.ofList)))
-    |> List.concat
-    |> Set.ofList
-
-let subTypes (o : OWLOntology)  (r: OWLReasoner) (c : OWLClass)= 
-    r.getSubClasses(c,true).getFlattened()
+let superTypes ctx (c : OWLClass) = 
+    ctx.Reasoner.getSuperClasses(c, true).getFlattened()
     |> iter<OWLEntity>
     |> List.map splitIntersections
     |> List.concat
 
 type OntologyManager() = 
     member x.manager = OWLManager.createOWLOntologyManager()
- 
+    
     member x.loadFile (p : string) = 
         try 
             Ontology(x.manager.loadOntologyFromOntologyDocument (java.io.File(p))) |> x.reason
         with :? OWLOntologyAlreadyExistsException as e -> 
             Ontology(x.manager.getOntology (e.getDocumentIRI())) |> x.reason
-
+    
     member private x.reason o = 
         match o with
         | Ontology(o) -> 
-            let reasonerFactory = StructuralReasonerFactory()
+            let reasonerFactory = HermiT.Net.NetReasonerFactoryImpl() 
             let config = new SimpleConfiguration()
-            let reasoner = reasonerFactory.createReasoner (o, config)
-            reasoner.precomputeInferences()
-            (Ontology (reasoner.getRootOntology()),Reasoner reasoner)
-                
-    member x.schema o (r:Reasoner) (iri : string) = 
-        match o,r with
-        | Ontology.Ontology(o),Reasoner.Reasoner(r) ->
             
-            let f = x.manager.getOWLDataFactory()
-            let cs = (f.getOWLClass(IRI.create iri).asOWLClass())
-            { Uri = Uri.Uri(iri)
-              Label = [] |> Set.ofList
-              ObjectProperties = propertiesFrom o r cs
-              DataProperties = Set.empty
-              EquivalentClasses =
-                  r.getEquivalentClasses(cs).getEntities()
-                  |> iter<obj>
-                  |> List.map splitIntersections
-                  |> List.concat
-                  |> Set.ofList
-              Supertypes = Set.empty
-              Subtypes = subTypes o r cs |> Set.ofList }
+            let reasoner = reasonerFactory.createReasoner (o, config)
+            Ontology(reasoner.getRootOntology()), Reasoner reasoner, 
+            Factory(o.getOWLOntologyManager().getOWLDataFactory())
+    
+    member x.schema ctx (iri : string) = 
+        let cs = (ctx.DataFactory.getOWLClass(IRI.create iri).asOWLClass())
+        { Uri = Uri.Uri(iri)
+          Label = [] |> Set.ofList
+          ObjectProperties = Set.empty
+          DataProperties = Set.empty
+          EquivalentClasses = 
+              ctx.Reasoner.getEquivalentClasses(cs).getEntities()
+              |> iter<obj>
+              |> List.map splitIntersections
+              |> List.concat
+              |> Set.ofList
+          Supertypes = superTypes ctx cs |> Set.ofList
+          Subtypes = subTypes ctx cs |> Set.ofList }

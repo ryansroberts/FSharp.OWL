@@ -32,6 +32,10 @@ let info =
 #r "FSharp.Literate.dll"
 #r "FSharp.CodeFormat.dll"
 #r "FSharp.MetadataFormat.dll"
+#r "../../packages/DotnetRDF/lib/net40/Dotnetrdf.dll"
+#r "../../packages/VDS.Common/lib/net40-client/VDS.Common.dll"
+#r "FSharp.MetadataFormat.dll"
+
 open Fake
 open System.IO
 open Fake.FileHelper
