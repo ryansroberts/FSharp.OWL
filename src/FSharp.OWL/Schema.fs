@@ -62,7 +62,6 @@ type Where=
 
 type Sparql = QueryType * Where
 
-
 open VDS.RDF.Query
 open VDS.RDF.Parsing
 open VDS.RDF.Query.Datasets
@@ -71,13 +70,23 @@ type Cardinality =
 | Unspecified
 | Constrained of int * int
 
-type Property = {
-  Uri : Uri
-  Range : Uri
+type PropertyRange = {
+  Range : Set<Uri>
   Cardinality : Cardinality
 }
 
+[<System.Flags>]
+type Characteristics = 
+| None              = 0b000000000
+| Functional        = 0b000000001
+| InverseFunctional = 0b000000010
+| Transitive        = 0b000000100
+| Symmetric         = 0b000010000
+| Asymmetric        = 0b000100000
+| Reflexive         = 0b001000000
+| Irreflexive       = 0b010000000
 
+type Property = Uri *  PropertyRange  
 
 type ClassExpression =
 | Union of ClassExpression
@@ -113,7 +122,7 @@ type DataProperty = Property
 type Class = {
     Uri : Uri 
     Label : Set<Literal> 
-    ObjectProperties : Set<(Uri * Set<Uri>)>
+    ObjectProperties : Set<(Uri * Characteristics * PropertyRange)>
     DataProperties : Set<(Uri * Set<Uri>)>
     Subtypes : Set<Uri>
     Supertypes : Set<Uri>

@@ -15,6 +15,7 @@ type Platform = Net40
 let (++) a b = Path.Combine(a, b)
 
 type fixture() = 
+    
     [<Test>]
     member public x.``Expression tree for Pizza``() = 
         let resolutionFolder = ""
@@ -37,17 +38,11 @@ type fixture() =
         dumpAll (TypeProviderInstantiation.FileProvider(args))
     
     [<Test>]
-    member public x.``Generate select query``() =
+    member public x.``Generate select query``() = 
         let wineStore = loadFile (__SOURCE_DIRECTORY__ ++ "pizza.xml")
-        let rs = resultset (QueryType.Select [Binding.Wildcard],
-                            Where [BGP.a "s" (Node.Uri (Uri.Uri "http://www.w3.org/2002/07/owl#NamedIndividual"))]) wineStore
+        let rs = 
+            resultset 
+                (QueryType.Select [ Binding.Wildcard ], 
+                 Where [ BGP.a "s" (Node.Uri(Uri.Uri "http://www.w3.org/2002/07/owl#NamedIndividual")) ]) wineStore
         printfn "%A" rs
-
-
-(*
-type wineOnt = LinkedData.Memory<ttl,
-                                "http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#wine",
-                                "base:http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#">
-
-*)
 

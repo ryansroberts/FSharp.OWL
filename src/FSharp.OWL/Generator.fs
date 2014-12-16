@@ -12,6 +12,10 @@ open Store
 open OWLQueryable
 open Gubbins
 
+let (|Flags|_|) f input = 
+    if ((List.reduce (|||) f) &&& input <> Characteristics.None) then Some f
+    else None
+
 type GenerationContext = 
     { ns : prefixes
       uri : Uri
@@ -73,14 +77,30 @@ let vdsUri (g : IGraph) (u : Schema.Uri) =
     | Uri.Uri(s) -> g.CreateUriNode(System.Uri s)
     | Uri.QName(p, n) -> g.CreateUriNode(System.Uri(p + n))
 
-let objectProperty (ctx : GenerationContext) r = 
-    let restriction = ProvidedTypeDefinition(restrictionName ctx.ns r, Some typeof<obj>)
-    let ctor = restriction.GetConstructors() |> Seq.exactlyOne
-    let n = typeName ctx.ns ctx.uri
-    let field = ProvidedField("_" + n, restriction)
-    field.SetFieldAttributes(FieldAttributes.Private)
-    let prop = ProvidedProperty(n, restriction, GetterCode = (fun [ this ] -> <@@ null @@>))
-    (prop, field, restriction)
+let objectProperty (ctx : GenerationContext) (ch : Characteristics) (p : Schema.PropertyRange) = 
+    let scalar pn = 
+        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns pn.Range, Some typeof<obj>)
+        let ctor = restriction.GetConstructors() |> Seq.exactlyOne
+        let n = typeName ctx.ns ctx.uri
+        let field = ProvidedField("_" + n, restriction)
+        field.SetFieldAttributes(FieldAttributes.Private)
+        let prop = ProvidedProperty(n, restriction, GetterCode = (fun [ this ] -> <@@ null @@>))
+        (prop, field, restriction)
+    
+    let collection pn = 
+        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns pn.Range, Some typeof<obj>)
+        let lt = typedefof<List<_>>.MakeGenericType([| restriction :> System.Type |])
+        let ctor = restriction.GetConstructors() |> Seq.exactlyOne
+        let n = typeName ctx.ns ctx.uri
+        let field = ProvidedField("_" + n, lt)
+        field.SetFieldAttributes(FieldAttributes.Private)
+        let prop = ProvidedProperty(n, lt, GetterCode = (fun [ this ] -> <@@ null @@>))
+        (prop, field, restriction)
+    
+    match ch with
+    | Characteristics.Functional _ -> scalar p
+    | Flags [Characteristics.InverseFunctional ] _ -> scalar p
+    | _ -> collection p
 
 let individualType (ctx : GenerationContext) cs (rx : ProvidedProperty list) = 
     let t = ProvidedTypeDefinition("Individual", Some typeof<Individual>)
@@ -124,8 +144,8 @@ let rec classNode (ctx : GenerationContext) =
         let op = ProvidedTypeDefinition("ObjectProperties", Some typeof<obj>)
         cls.AddMember op
         (fun () -> 
-        [ for (p, r) in cs.ObjectProperties do
-              yield objectPropertyType { ctx with uri = p } r ])
+        [ for uri, ch, p in cs.ObjectProperties do
+              yield objectPropertyType { ctx with uri = uri } p ])
         |> op.AddMembersDelayed
     if cs.DataProperties.Any() then 
         let op = ProvidedTypeDefinition("DataProperties", Some typeof<obj>)
@@ -138,8 +158,8 @@ let rec classNode (ctx : GenerationContext) =
     cls.AddMember op
     (fun () -> 
     [ let rx = 
-          [ for (p, r) in cs.ObjectProperties do
-                let (prop, field, restriction) = objectProperty { ctx with uri = p } r
+          [ for uri, ch, p in cs.ObjectProperties do
+                let (prop, field, restriction) = objectProperty { ctx with uri = uri } ch p
                 op.AddMember restriction
                 yield (prop, field) ]
       
@@ -149,7 +169,9 @@ let rec classNode (ctx : GenerationContext) =
               ("Individuals", [ ProvidedParameter("store", typeof<Store.store>) ], 
                typedefof<IQueryable<_>>.MakeGenericType([| individualType :> System.Type |]), 
                InvokeCode = (fun args -> <@@ () @@>), IsStaticMethod = true)
-      yield! rx |> Seq.cast<MemberInfo>
+      for p, f in rx do
+          yield p :> MemberInfo
+          yield f :> MemberInfo
       yield individuals :> MemberInfo
       yield individualType :> MemberInfo ])
     |> cls.AddMembersDelayed

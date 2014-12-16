@@ -8,3 +8,4 @@ open System.Text.RegularExpressions
     let (|NotEmpty|_|) str =
         if not(System.String.IsNullOrEmpty str) then Some (str)
         else None
+  
