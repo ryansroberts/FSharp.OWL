@@ -32,8 +32,7 @@ type Memory(config:TypeProviderConfig) as x =
           let nsmap = Schema.parse nsmap
           let om = OntologyManager ()
           let ctx = Reasoning.ReasoningContext.create (om.loadFile path) 
-          for kv in ctx.ObjectDomain do
-            printfn "%A -> %A"  (kv.Key) (kv.Value)               
+                     
           Generator.root erased nsmap (Uri.Uri baseUri) (om.schema ctx)
         | _ -> raise (ArgumentException (sprintf "Invalid parameters %A" parameters))
           

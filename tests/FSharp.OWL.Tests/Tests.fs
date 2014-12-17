@@ -32,7 +32,7 @@ type fixture() =
         
         let args = 
             { Path = __SOURCE_DIRECTORY__ ++ "pizza.xml"
-              BaseUri = "http://www.co-ode.org/ontologies/pizza/pizza.owl#Pizza"
+              BaseUri = "http://www.co-ode.org/ontologies/pizza/pizza.owl#CheeseyPizza"
               NSMap = """base:http://www.co-ode.org/ontologies/pizza/pizza.owl#,
                          wine:http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#""" }
         dumpAll (TypeProviderInstantiation.FileProvider(args))
@@ -46,3 +46,10 @@ type fixture() =
                  Where [ BGP.a "s" (Node.Uri(Uri.Uri "http://www.w3.org/2002/07/owl#NamedIndividual")) ]) wineStore
         printfn "%A" rs
 
+(*
+[<Literal>]
+let ttl = __SOURCE_DIRECTORY__ + "/pizza.xml"
+type pz = LinkedData.Memory<ttl, "http://www.co-ode.org/ontologies/pizza/pizza.owl#Pizza","""base:http://www.co-ode.org/ontologies/pizza/pizza.owl#"""> 
+
+type spicy = pz.Pizza.SubClasses.SpicyPizza
+*)
