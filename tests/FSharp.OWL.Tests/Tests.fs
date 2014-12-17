@@ -45,11 +45,12 @@ type fixture() =
                 (QueryType.Select [ Binding.Wildcard ], 
                  Where [ BGP.a "s" (Node.Uri(Uri.Uri "http://www.w3.org/2002/07/owl#NamedIndividual")) ]) wineStore
         printfn "%A" rs
-
 (*
 [<Literal>]
 let ttl = __SOURCE_DIRECTORY__ + "/pizza.xml"
 type pz = LinkedData.Memory<ttl, "http://www.co-ode.org/ontologies/pizza/pizza.owl#Pizza","""base:http://www.co-ode.org/ontologies/pizza/pizza.owl#"""> 
 
 type spicy = pz.Pizza.SubClasses.SpicyPizza
+
+type pizza = pz.Pizza.SubClasses.InterestingPizza
 *)

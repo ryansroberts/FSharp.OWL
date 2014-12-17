@@ -12,9 +12,7 @@ open Store
 open OWLQueryable
 open Gubbins
 
-let (|Flags|_|) f input = 
-    if ((List.reduce (|||) f) &&& input <> Characteristics.None) then Some f
-    else None
+
 
 type GenerationContext = 
     { ns : prefixes
@@ -66,58 +64,70 @@ let className (ns : prefixes) (cls : Schema.Class) =
     if uris.Length = 0 then typeName ns cls.Uri
     else sprintf "%s≡%s" (typeName ns cls.Uri) (uris |> String.concat "≡")
 
-let restrictionName (ns : prefixes) (range : Set<Uri>) = 
-    range
-    |> Set.toArray
-    |> Array.map (fun u -> (string u))
-    |> String.concat " . "
+let restrictionName (ns : prefixes) (p:Schema.Property) = 
+    let (uri,range) = p
+    sprintf "%s some %s" (typeName ns uri) (typeName ns (range.Range |> Seq.head))
 
 let vdsUri (g : IGraph) (u : Schema.Uri) = 
     match u with
     | Uri.Uri(s) -> g.CreateUriNode(System.Uri s)
     | Uri.QName(p, n) -> g.CreateUriNode(System.Uri(p + n))
 
-let objectProperty (ctx : GenerationContext) (ch : Characteristics) (p : Schema.PropertyRange) = 
-    let scalar pn = 
-        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns pn.Range, Some typeof<obj>)
-        let ctor = restriction.GetConstructors() |> Seq.exactlyOne
+let objectProperty (ctx : GenerationContext) (ch : Characteristics) (p : Schema.Property) = 
+    let one p = 
+        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns p, Some typeof<obj>)
         let n = typeName ctx.ns ctx.uri
         let field = ProvidedField("_" + n, restriction)
         field.SetFieldAttributes(FieldAttributes.Private)
-        let prop = ProvidedProperty(n, restriction, GetterCode = (fun [ this ] -> <@@ null @@>))
+        let prop = ProvidedProperty(n, restriction, GetterCode = (fun [ this ] -> <@@ Expr.FieldGet (this, field) @@>))
         (prop, field, restriction)
     
-    let collection pn = 
-        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns pn.Range, Some typeof<obj>)
+    let some p = 
+        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns p, Some typeof<obj>)
         let lt = typedefof<List<_>>.MakeGenericType([| restriction :> System.Type |])
-        let ctor = restriction.GetConstructors() |> Seq.exactlyOne
+        restriction.AddMember lt
         let n = typeName ctx.ns ctx.uri
         let field = ProvidedField("_" + n, lt)
         field.SetFieldAttributes(FieldAttributes.Private)
-        let prop = ProvidedProperty(n, lt, GetterCode = (fun [ this ] -> <@@ null @@>))
+        let prop = ProvidedProperty(n, lt, GetterCode = (fun [ this ] ->  <@@ Expr.FieldGet (this, field) @@>))
         (prop, field, restriction)
-    
-    match ch with
-    | Characteristics.Functional _ -> scalar p
-    | Flags [Characteristics.InverseFunctional ] _ -> scalar p
-    | _ -> collection p
+    let (uri,range) = p
+    match range.Cardinality with
+    | Cardinality.Exactly 1 -> one p
+    | _ -> some p
 
-let individualType (ctx : GenerationContext) cs (rx : ProvidedProperty list) = 
+let individualType (ctx : GenerationContext) cs (rx :(ProvidedProperty * ProvidedField) list) = 
     let t = ProvidedTypeDefinition("Individual", Some typeof<Individual>)
     
     let ctor = 
         ProvidedConstructor
             (ProvidedParameter("self", typeof<Schema.Uri>) 
-             :: [ for r in rx -> ProvidedParameter(r.Name, typeof<Schema.Uri>) ])
+             :: [ for (p,f) in rx -> ProvidedParameter(p.Name, typeof<Schema.Uri>) ])
     
     let ctorInfo = 
         typeof<Individual>
             .GetConstructor(BindingFlags.Public ||| BindingFlags.Instance, null, [| typeof<string> |], null)
     ctor.BaseConstructorCall <- fun args -> ctorInfo, [ args.[0] ]
-    ctor.InvokeCode <- fun args -> <@@ args @@>
-    (fun () -> rx) |> t.AddMembersDelayed
+    
+    ctor.InvokeCode <- fun (this::args) -> 
+        rx 
+        |> List.mapi (fun i (p,f) -> <@@ Expr.FieldSet(this,f,Expr.Coerce((args.[i]),p.PropertyType)) @@>)
+        |> List.reduce (fun a e -> Expr.Sequential(a,e)) 
+     
+    for (p,r) in rx do 
+        t.AddMember p
+        t.AddMember r
+
     t.AddMember ctor
     (ctor, t)
+
+
+let localisedAnnotations ax = [
+    for a in ax do
+        match a with 
+        | Literal.Literal a -> yield a
+        | Literal.LocalisedLiteral (c,a) -> yield a
+]
 
 let rec classNode (ctx : GenerationContext) = 
     let cs = ctx.ont (string ctx.uri)
@@ -126,7 +136,10 @@ let rec classNode (ctx : GenerationContext) =
         <summary> 
             Equivalents: %s    
         </summary>
-    """ (className ctx.ns cs))
+        <remarks>
+            %s
+        </remarks>
+    """ (className ctx.ns cs) (cs.Comments |> localisedAnnotations |> Seq.fold (+) ""))
     let ctor = ProvidedConstructor([])
     let ctorInfo = 
         typeof<Class>.GetConstructor(BindingFlags.Public ||| BindingFlags.Instance, null, [| typeof<string> |], null)
@@ -159,11 +172,11 @@ let rec classNode (ctx : GenerationContext) =
     (fun () -> 
     [ let rx = 
           [ for uri, ch, p in cs.ObjectProperties do
-                let (prop, field, restriction) = objectProperty { ctx with uri = uri } ch p
+                let (prop, field, restriction) = objectProperty { ctx with uri = uri } ch (uri,p)
                 op.AddMember restriction
                 yield (prop, field) ]
       
-      let (ctor, individualType) = individualType ctx cs (rx |> List.map fst)
+      let (ctor, individualType) = individualType ctx cs rx
       let individuals = 
           ProvidedMethod
               ("Individuals", [ ProvidedParameter("store", typeof<Store.store>) ], 

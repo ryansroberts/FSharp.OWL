@@ -16,6 +16,7 @@ let (++) p n  = QName(p,n)
 
 type Literal =
   | Literal of string
+  | LocalisedLiteral of string * string
 
 type Node =
   | Uri of Uri
@@ -68,7 +69,10 @@ open VDS.RDF.Query.Datasets
 
 type Cardinality =
 | Unspecified
-| Constrained of int * int
+| Minimum of int
+| Maximum of int
+| Range of int * int
+| Exactly of int
 
 type PropertyRange = {
   Range : Set<Uri>
@@ -121,7 +125,8 @@ type DataProperty = Property
 
 type Class = {
     Uri : Uri 
-    Label : Set<Literal> 
+    Label : Literal list
+    Comments : Literal list
     ObjectProperties : Set<(Uri * Characteristics * PropertyRange)>
     DataProperties : Set<(Uri * Set<Uri>)>
     Subtypes : Set<Uri>

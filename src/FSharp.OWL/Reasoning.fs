@@ -15,6 +15,7 @@ open uk.ac.manchester.cs.owl.owlapi
 open org.semanticweb.owlapi.apibinding
 open org.semanticweb.owlapi.model
 open org.semanticweb.owlapi.reasoner
+open Microsoft.FSharp.Linq.RuntimeHelpers
 
 type Ontology = 
     | Ontology of OWLOntology
@@ -46,6 +47,10 @@ let rec splitIntersections (c : obj) =
                  |> List.concat
       | :? HasIRI as x -> yield Uri.fromHasUri x ]
 
+let (|Flags|_|) f input = 
+    if ((List.reduce (|||) f) &&& input <> Characteristics.None) then Some f
+    else None
+
 let domainMap (o : OWLOntology) (r : OWLReasoner) (f : OWLDataFactory) = 
     let characteristicsOf (p:OWLEntity) = 
         let test f p = 
@@ -53,8 +58,6 @@ let domainMap (o : OWLOntology) (r : OWLReasoner) (f : OWLDataFactory) =
             else Characteristics.None       
         match p with 
         | :? OWLObjectProperty as p ->
-
-
             let isFunctional p = 
                 f.getOWLObjectMinCardinality(2, p)
                 |> r.isSatisfiable
@@ -115,7 +118,6 @@ type ReasoningContext =
               DataDomain = dataprops }
 
 
-
 let extractIri ex = ex |> List.map Uri.fromHasUri
 
 let objectProperties ctx (c : OWLClass) = 
@@ -127,7 +129,12 @@ let objectProperties ctx (c : OWLClass) =
         | eq -> eq
     
     let inClosure (cx : OWLClass list) = cx |> List.filter (fun c -> ctx.Ontology.containsEntityInSignature (c, true))
-    let cardinality c (p:OWLProperty) =  Cardinality.Unspecified
+    
+    let cardinality ch (p:OWLProperty) =  
+        match ch with 
+        | Flags [Characteristics.Functional] _ -> Cardinality.Exactly 1
+        | _ -> Cardinality.Unspecified
+
     ctx.ObjectDomain
     |> Map.find c
     |> Seq.map (fun (ch, p) -> 
@@ -137,7 +144,7 @@ let objectProperties ctx (c : OWLClass) =
                   |> inClosure
                   |> extractIri
                   |> Set.ofList
-              Cardinality = cardinality c p }))
+              Cardinality = cardinality ch p }))
 
 let subTypes ctx (c : OWLClass) = 
     ctx.Reasoner.getSubClasses(c, true).getFlattened()
@@ -148,6 +155,18 @@ let superTypes ctx (c : OWLClass) =
     ctx.Reasoner.getSuperClasses(c, true).getFlattened()
     |> iter<OWLClass>
     |> List.map Uri.fromHasUri
+
+let labels ctx (e:OWLEntity) =
+    e.getAnnotations(ctx.Ontology)
+    |> iter<OWLAnnotation>
+    |> List.filter (fun a -> a.getProperty().isLabel())
+    |> List.map (fun a -> Literal.Literal (string (a.getValue())))
+
+let comments ctx (e:OWLEntity) =
+    e.getAnnotations(ctx.Ontology)
+    |> iter<OWLAnnotation>
+    |> List.filter (fun a -> a.getProperty().isComment())
+    |> List.map (fun a -> Literal.Literal (string (a.getValue())))
 
 type OntologyManager() = 
     member x.manager = OWLManager.createOWLOntologyManager()
@@ -171,7 +190,8 @@ type OntologyManager() =
     member x.schema ctx (iri : string) = 
         let cs = (ctx.DataFactory.getOWLClass(IRI.create iri).asOWLClass())
         { Uri = Uri.Uri(iri)
-          Label = [] |> Set.ofList
+          Label = labels ctx cs
+          Comments = comments ctx cs
           ObjectProperties = objectProperties ctx cs |> Set.ofSeq
           DataProperties = Set.empty
           EquivalentClasses = 
