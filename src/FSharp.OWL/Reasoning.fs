@@ -117,16 +117,28 @@ type ReasoningContext =
               ObjectDomain = oprops
               DataDomain = dataprops }
 
+let (<<<) p x  =  
+    printfn p x
+    x
+
 
 let extractIri ex = ex |> List.map Uri.fromHasUri
 
 let objectProperties ctx (c : OWLClass) = 
 
-    let rangeOf c p = 
-        let possible = ctx.DataFactory.getOWLObjectSomeValuesFrom (ctx.DataFactory.getOWLObjectInverseOf (p), c)
-        match ctx.Reasoner.getEquivalentClasses(possible).getEntities() |> iter<OWLClass> with
-        | [] -> ctx.Reasoner.getSuperClasses(possible, true).getFlattened() |> iter<OWLClass>
-        | eq -> eq
+    let rangeOf (c:OWLClassExpression) (p:OWLObjectPropertyExpression) = [
+        let common = ctx.Reasoner.getObjectPropertyRanges(p,true).getFlattened() |> iter<OWLClass>
+        let possible c = 
+            ctx.DataFactory.getOWLObjectSomeValuesFrom (p, c)
+        for c in common do
+            yield! ctx.Reasoner.getEquivalentClasses(c).getEntities() 
+                    |> iter<OWLClass>
+                    |> List.filter (fun c ->  "Equivalent %A" <<< c; "Test %A" <<< ctx.Reasoner.isSatisfiable(possible c))   
+            yield! ctx.Reasoner.getSubClasses(c,false).getFlattened()
+                    |> iter<OWLClass>
+                    |> List.rev
+                    |> Seq.filter (fun c -> "Subclass %A" <<< c; "Test %A" <<< ctx.Reasoner.isSatisfiable(possible c))   
+    ]
     
     let inClosure (cx : OWLClass list) = cx |> List.filter (fun c -> ctx.Ontology.containsEntityInSignature (c, true))
     

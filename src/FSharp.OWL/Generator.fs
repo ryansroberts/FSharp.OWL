@@ -12,8 +12,6 @@ open Store
 open OWLQueryable
 open Gubbins
 
-
-
 type GenerationContext = 
     { ns : prefixes
       uri : Uri
@@ -64,9 +62,11 @@ let className (ns : prefixes) (cls : Schema.Class) =
     if uris.Length = 0 then typeName ns cls.Uri
     else sprintf "%s≡%s" (typeName ns cls.Uri) (uris |> String.concat "≡")
 
-let restrictionName (ns : prefixes) (p:Schema.Property) = 
-    let (uri,range) = p
-    sprintf "%s some %s" (typeName ns uri) (typeName ns (range.Range |> Seq.head))
+let restrictionName (ns : prefixes) (p : Schema.Property) = 
+    let (uri, range) = p
+    sprintf "%s some %s" (typeName ns uri) (range.Range
+                                            |> Seq.map (typeName ns)
+                                            |> Seq.reduce (sprintf "%s&%s"))
 
 let vdsUri (g : IGraph) (u : Schema.Uri) = 
     match u with
@@ -79,7 +79,7 @@ let objectProperty (ctx : GenerationContext) (ch : Characteristics) (p : Schema.
         let n = typeName ctx.ns ctx.uri
         let field = ProvidedField("_" + n, restriction)
         field.SetFieldAttributes(FieldAttributes.Private)
-        let prop = ProvidedProperty(n, restriction, GetterCode = (fun [ this ] -> <@@ Expr.FieldGet (this, field) @@>))
+        let prop = ProvidedProperty(n, restriction, GetterCode = (fun [ this ] -> <@@ Expr.FieldGet(this, field) @@>))
         (prop, field, restriction)
     
     let some p = 
@@ -89,45 +89,41 @@ let objectProperty (ctx : GenerationContext) (ch : Characteristics) (p : Schema.
         let n = typeName ctx.ns ctx.uri
         let field = ProvidedField("_" + n, lt)
         field.SetFieldAttributes(FieldAttributes.Private)
-        let prop = ProvidedProperty(n, lt, GetterCode = (fun [ this ] ->  <@@ Expr.FieldGet (this, field) @@>))
+        let prop = ProvidedProperty(n, lt, GetterCode = (fun [ this ] -> <@@ Expr.FieldGet(this, field) @@>))
         (prop, field, restriction)
-    let (uri,range) = p
+    
+    let (uri, range) = p
     match range.Cardinality with
     | Cardinality.Exactly 1 -> one p
     | _ -> some p
 
-let individualType (ctx : GenerationContext) cs (rx :(ProvidedProperty * ProvidedField) list) = 
+let individualType (ctx : GenerationContext) cs (rx : (ProvidedProperty * ProvidedField) list) = 
     let t = ProvidedTypeDefinition("Individual", Some typeof<Individual>)
     
     let ctor = 
         ProvidedConstructor
             (ProvidedParameter("self", typeof<Schema.Uri>) 
-             :: [ for (p,f) in rx -> ProvidedParameter(p.Name, typeof<Schema.Uri>) ])
+             :: [ for (p, f) in rx -> ProvidedParameter(p.Name, typeof<Schema.Uri>) ])
     
     let ctorInfo = 
         typeof<Individual>
             .GetConstructor(BindingFlags.Public ||| BindingFlags.Instance, null, [| typeof<string> |], null)
     ctor.BaseConstructorCall <- fun args -> ctorInfo, [ args.[0] ]
-    
-    ctor.InvokeCode <- fun (this::args) -> 
-        rx 
-        |> List.mapi (fun i (p,f) -> <@@ Expr.FieldSet(this,f,Expr.Coerce((args.[i]),p.PropertyType)) @@>)
-        |> List.reduce (fun a e -> Expr.Sequential(a,e)) 
-     
-    for (p,r) in rx do 
+    ctor.InvokeCode <- fun (this :: args) -> 
+        rx
+        |> List.mapi (fun i (p, f) -> <@@ Expr.FieldSet(this, f, Expr.Coerce((args.[i]), p.PropertyType)) @@>)
+        |> List.reduce (fun a e -> Expr.Sequential(a, e))
+    for (p, r) in rx do
         t.AddMember p
         t.AddMember r
-
     t.AddMember ctor
     (ctor, t)
 
-
-let localisedAnnotations ax = [
-    for a in ax do
-        match a with 
-        | Literal.Literal a -> yield a
-        | Literal.LocalisedLiteral (c,a) -> yield a
-]
+let localisedAnnotations ax = 
+    [ for a in ax do
+          match a with
+          | Literal.Literal a -> yield a
+          | Literal.LocalisedLiteral(c, a) -> yield a ]
 
 let rec classNode (ctx : GenerationContext) = 
     let cs = ctx.ont (string ctx.uri)
@@ -139,7 +135,9 @@ let rec classNode (ctx : GenerationContext) =
         <remarks>
             %s
         </remarks>
-    """ (className ctx.ns cs) (cs.Comments |> localisedAnnotations |> Seq.fold (+) ""))
+    """ (className ctx.ns cs) (cs.Comments
+                               |> localisedAnnotations
+                               |> Seq.fold (+) ""))
     let ctor = ProvidedConstructor([])
     let ctorInfo = 
         typeof<Class>.GetConstructor(BindingFlags.Public ||| BindingFlags.Instance, null, [| typeof<string> |], null)
@@ -147,12 +145,10 @@ let rec classNode (ctx : GenerationContext) =
     ctor.InvokeCode <- fun args -> <@@ () @@>
     cls.AddMember ctor
     if cs.Subtypes.Any() then 
-        let sc = ProvidedTypeDefinition("SubClasses", Some typeof<obj>)
-        cls.AddMember sc
         (fun () -> 
         [ for sub in cs.Subtypes do
               yield classNode { ctx with uri = sub } ])
-        |> sc.AddMembersDelayed
+        |> cls.AddMembersDelayed
     if cs.ObjectProperties.Any() then 
         let op = ProvidedTypeDefinition("ObjectProperties", Some typeof<obj>)
         cls.AddMember op
@@ -172,7 +168,7 @@ let rec classNode (ctx : GenerationContext) =
     (fun () -> 
     [ let rx = 
           [ for uri, ch, p in cs.ObjectProperties do
-                let (prop, field, restriction) = objectProperty { ctx with uri = uri } ch (uri,p)
+                let (prop, field, restriction) = objectProperty { ctx with uri = uri } ch (uri, p)
                 op.AddMember restriction
                 yield (prop, field) ]
       
