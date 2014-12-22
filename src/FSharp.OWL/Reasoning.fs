@@ -47,9 +47,6 @@ let rec splitIntersections (c : obj) =
                  |> List.concat
       | :? HasIRI as x -> yield Uri.fromHasUri x ]
 
-let (|Flags|_|) f input = 
-    if ((List.reduce (|||) f) &&& input <> Characteristics.None) then Some f
-    else None
 
 let domainMap (o : OWLOntology) (r : OWLReasoner) (f : OWLDataFactory) = 
     let characteristicsOf (p:OWLEntity) = 
@@ -117,15 +114,65 @@ type ReasoningContext =
               ObjectDomain = oprops
               DataDomain = dataprops }
 
-let (<<<) p x  =  
+let inline (>>>) x p =  
     printfn p x
     x
+(*
+  Cribbed from Protege's RestrictedPropertyExtractor
+*)
+type propertyExtractor () =
+    let mutable extracted : Set<Constraint> = Set.empty
+    let extract (node:OWLQuantifiedRestriction) = 
+     extracted <-  
+            extracted.Add (Constraint.SomeOf( 
+                node.getFiller().getObjectPropertiesInSignature()
+                |> iter<OWLEntity> 
+                |> List.map Uri.fromHasUri
+                |> Set.ofList))
+     ()
+    member x.Extracted() = extracted
+    interface OWLClassExpressionVisitor with
+        member x.visit(node:OWLClass) =
+            node.getClassesInSignature()
+            |> iter<OWLClass>
+            |> List.iter (fun e -> e.accept(x))
+            ()
+        member x.visit(node:OWLObjectIntersectionOf) =
+            node.getOperands()
+            |> iter<OWLClass>
+            |> List.iter (fun e -> e.accept(x))
+            ()       
+        member x.visit (node:OWLObjectComplementOf) =
+            node.getOperand().accept(x)
+        member x.visit (node:OWLObjectUnionOf) =
+            node.getOperands()
+                |> iter<OWLClass>
+                |> List.iter (fun e -> e.accept(x))
+            ()
+        member x.visit (node:OWLDataAllValuesFrom) = extract node 
+        member x.visit (node:OWLDataSomeValuesFrom) = extract node 
+        member x.visit (node:OWLDataHasValue) = ()
+        member x.visit (node:OWLObjectAllValuesFrom) = extract node
+        member x.visit (node:OWLObjectSomeValuesFrom) = extract node
+        member x.visit (node:OWLObjectHasValue) = ()
+        member x.visit (node:OWLObjectMinCardinality) = extract node
+        member x.visit (node:OWLObjectExactCardinality) = extract node
+        member x.visit (node:OWLObjectMaxCardinality) = extract node
+        member x.visit (node:OWLObjectHasSelf) = ()
+        member x.visit (node:OWLObjectOneOf) = ()
+        member x.visit (node:OWLDataMinCardinality) = extract node
+        member x.visit (node:OWLDataExactCardinality) = extract node
+        member x.visit (node:OWLDataMaxCardinality) = extract node
 
 
 let extractIri ex = ex |> List.map Uri.fromHasUri
 
 let objectProperties ctx (c : OWLClass) = 
-
+    let px = propertyExtractor() :> OWLClassExpressionVisitor
+     
+    px.visit(c)
+    printfn "Visited: %A" (px)
+     
     let rangeOf (c:OWLClassExpression) (p:OWLObjectPropertyExpression) = [
         let common = ctx.Reasoner.getObjectPropertyRanges(p,true).getFlattened() |> iter<OWLClass>
         let possible c = 
@@ -133,18 +180,17 @@ let objectProperties ctx (c : OWLClass) =
         for c in common do
             yield! ctx.Reasoner.getEquivalentClasses(c).getEntities() 
                     |> iter<OWLClass>
-                    |> List.filter (fun c ->  "Equivalent %A" <<< c; "Test %A" <<< ctx.Reasoner.isSatisfiable(possible c))   
+                    |> List.filter (fun c ->  ctx.Reasoner.isSatisfiable(possible c))   
             yield! ctx.Reasoner.getSubClasses(c,false).getFlattened()
                     |> iter<OWLClass>
                     |> List.rev
-                    |> Seq.filter (fun c -> "Subclass %A" <<< c; "Test %A" <<< ctx.Reasoner.isSatisfiable(possible c))   
+                    |> Seq.filter (fun c -> ctx.Reasoner.isSatisfiable(possible c))   
     ]
     
     let inClosure (cx : OWLClass list) = cx |> List.filter (fun c -> ctx.Ontology.containsEntityInSignature (c, true))
     
     let cardinality ch (p:OWLProperty) =  
         match ch with 
-        | Flags [Characteristics.Functional] _ -> Cardinality.Exactly 1
         | _ -> Cardinality.Unspecified
 
     ctx.ObjectDomain

@@ -32,7 +32,7 @@ type fixture() =
         
         let args = 
             { Path = __SOURCE_DIRECTORY__ ++ "pizza.xml"
-              BaseUri = "http://www.co-ode.org/ontologies/pizza/pizza.owl#CheeseyPizza"
+              BaseUri = "http://www.co-ode.org/ontologies/pizza/pizza.owl#Soho"
               NSMap = """base:http://www.co-ode.org/ontologies/pizza/pizza.owl#,
                          wine:http://www.w3.org/TR/2003/PR-owl-guide-20031209/wine#""" }
         dumpAll (TypeProviderInstantiation.FileProvider(args))

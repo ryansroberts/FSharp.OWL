@@ -92,6 +92,15 @@ type Characteristics =
 
 type Property = Uri *  PropertyRange  
 
+type Constraint =
+| SomeOf of Set<Uri>
+| Only of Set<Uri>
+| Value of Uri
+| Minimum of int * Uri
+| Maximum of int * Uri
+| Exactly of int * Uri
+
+
 type ClassExpression =
 | Union of ClassExpression
 | HasValue of Uri
