@@ -48,162 +48,126 @@ let rec splitIntersections (c : obj) =
       | :? HasIRI as x -> yield Uri.fromHasUri x ]
 
 
-let domainMap (o : OWLOntology) (r : OWLReasoner) (f : OWLDataFactory) = 
-    let characteristicsOf (p:OWLEntity) = 
-        let test f p = 
-            if f then p
-            else Characteristics.None       
-        match p with 
-        | :? OWLObjectProperty as p ->
-            let isFunctional p = 
-                f.getOWLObjectMinCardinality(2, p)
-                |> r.isSatisfiable
-                |> not
-
-            test (isFunctional (p)) Characteristics.Functional 
-            ||| test (p.isInverseFunctional (o)) Characteristics.InverseFunctional 
-            ||| test (p.isTransitive (o)) Characteristics.Transitive 
-            ||| test (p.isSymmetric (o)) Characteristics.Symmetric 
-            ||| test (p.isAsymmetric (o)) Characteristics.Asymmetric 
-            ||| test (p.isReflexive (o)) Characteristics.Reflexive 
-            ||| test (p.isIrreflexive (o)) Characteristics.Irreflexive
-        | :? OWLDataProperty as p -> test(p.isFunctional(o)) Characteristics.Functional
-            
-        
-    let ox = [for p in o.getObjectPropertiesInSignature() |> iter<OWLObjectProperty> do
-                for c in r.getObjectPropertyDomains(p,true).getFlattened() 
-                         |> iter<OWLClass> do
-                         
-                    for c in c::(r.getSubClasses(c,false).getFlattened()
-                            |> iter<OWLClass>) |> Set.ofList do
-                
-                        yield (c,characteristicsOf p,p)
-              ]
-
-    let dx = [for p in o.getDataPropertiesInSignature() |> iter<OWLDataProperty> do
-                for c in r.getDataPropertyDomains(p,true).getFlattened() 
-                         |> iter<OWLClass> do
-
-                    for c in c::(r.getSubClasses(c,false).getFlattened()
-                            |> iter<OWLClass>) |> Set.ofList do
-                
-                        yield (c,characteristicsOf p,p)
-              ]
-
-    let mapOf px =
-        px             
-        |> Seq.groupBy (fun (c, _, _) -> c)
-        |> Seq.map (fun (c, p) -> (c, p |> Seq.map (fun (c, ch, p) -> (ch, p))))
-        |> Map.ofSeq
-
-    (mapOf ox,mapOf dx)
-
 type ReasoningContext = 
     { Ontology : OWLOntology
       Reasoner : OWLReasoner
-      DataFactory : OWLDataFactory
-      ObjectDomain : Map<OWLClass, (Characteristics * OWLObjectProperty) seq>
-      DataDomain : Map<OWLClass, (Characteristics * OWLDataProperty) seq> }
+      DataFactory : OWLDataFactory}
     static member create (o, r, f) = 
         match o, r, f with
         | Ontology o, Reasoner r, Factory f -> 
-            let (oprops, dataprops) = domainMap o r f
             { Ontology = o
               Reasoner = r
-              DataFactory = f
-              ObjectDomain = oprops
-              DataDomain = dataprops }
+              DataFactory = f}
 
-let inline (>>>) x p =  
-    printfn p x
-    x
-(*
-  Cribbed from Protege's RestrictedPropertyExtractor
-*)
-type propertyExtractor () =
-    let mutable extracted : Set<Constraint> = Set.empty
-    let extract (node:OWLQuantifiedRestriction) = 
-     extracted <-  
-            extracted.Add (Constraint.SomeOf( 
-                node.getFiller().getObjectPropertiesInSignature()
-                |> iter<OWLEntity> 
-                |> List.map Uri.fromHasUri
-                |> Set.ofList))
-     ()
+let characteristicsOf ctx (p : OWLPropertyExpression) = 
+    let test f p = 
+        if f then p
+        else Characteristics.None
+    let isFunctionalObject p = 
+        ctx.DataFactory.getOWLObjectMinCardinality (2, p)
+        |> ctx.Reasoner.isSatisfiable
+        |> not
+    let isFunctionalData p = 
+        ctx.DataFactory.getOWLDataMinCardinality (2, p)
+        |> ctx.Reasoner.isSatisfiable
+        |> not
+    match p with
+        | :? OWLObjectProperty as p -> 
+            test (isFunctionalObject (p)) Characteristics.Functional 
+                ||| test (p.isInverseFunctional (ctx.Ontology)) Characteristics.InverseFunctional 
+                ||| test (p.isTransitive (ctx.Ontology)) Characteristics.Transitive 
+                ||| test (p.isSymmetric (ctx.Ontology)) Characteristics.Symmetric 
+                ||| test (p.isAsymmetric (ctx.Ontology)) Characteristics.Asymmetric 
+                ||| test (p.isReflexive (ctx.Ontology)) Characteristics.Reflexive 
+                ||| test (p.isIrreflexive (ctx.Ontology)) Characteristics.Irreflexive 
+        | :? OWLDataProperty as p -> test (isFunctionalData (p)) Characteristics.Functional
+
+(*Vistors look like hell in fs*)
+type propertyExtractor(ctx) = 
+    let mutable extracted : Set<Uri * Characteristics * Constraint> = Set.empty
     member x.Extracted() = extracted
+    
+    member x.extract (node : OWLQuantifiedRestriction) f = 
+        let prop = node.getProperty()
+        if (prop.isAnonymous()) then x.visitNode (prop)
+        else
+            let uriOf p = 
+                Uri.fromString <| (string p).Substring(1,(string p).Length  - 2) (*Hack, find better way to extract uri*)
+            extracted <- extracted.Add(uriOf prop, 
+                                        characteristicsOf ctx prop,
+                                        f (node.getFiller().getClassesInSignature()
+                                           |> iter<OWLClass>
+                                           |> List.map Uri.fromHasUri
+                                           |> Set.ofList))
+    
+    member private x.visitNode (node : OWLObject) : unit = 
+        match node with
+        | :? OWLObjectIntersectionOf as e -> e.accept x
+        | :? OWLObjectComplementOf as e -> e.accept x
+        | :? OWLObjectUnionOf as e -> e.accept x
+        | :? OWLObjectAllValuesFrom as e -> e.accept x
+        | :? OWLObjectSomeValuesFrom as e -> e.accept x
+        | :? OWLObjectHasValue as e -> e.accept x
+        | :? OWLObjectMinCardinality as e -> e.accept x
+        | :? OWLObjectExactCardinality as e -> e.accept x
+        | :? OWLObjectMaxCardinality as e -> e.accept x
+        | :? OWLObjectHasSelf as e -> e.accept x
+        | :? OWLObjectOneOf as e -> e.accept x
+        | :? OWLDataMinCardinality as e -> e.accept x
+        | :? OWLDataExactCardinality as e -> e.accept x
+        | :? OWLDataMaxCardinality as e -> e.accept x
+        | sc -> ()
+        ()
+    
     interface OWLClassExpressionVisitor with
-        member x.visit(node:OWLClass) =
-            node.getClassesInSignature()
-            |> iter<OWLClass>
-            |> List.iter (fun e -> e.accept(x))
+        
+        member x.visit (node : OWLClass) = 
+            node.getSuperClasses(ctx.Ontology)
+            |> iter<OWLObject> 
+            |> List.iter (x.visitNode)
             ()
-        member x.visit(node:OWLObjectIntersectionOf) =
+        
+        member x.visit (node : OWLObjectIntersectionOf) = 
             node.getOperands()
             |> iter<OWLClass>
-            |> List.iter (fun e -> e.accept(x))
-            ()       
-        member x.visit (node:OWLObjectComplementOf) =
-            node.getOperand().accept(x)
-        member x.visit (node:OWLObjectUnionOf) =
-            node.getOperands()
-                |> iter<OWLClass>
-                |> List.iter (fun e -> e.accept(x))
+            |> List.iter (fun e -> e.accept (x))
             ()
-        member x.visit (node:OWLDataAllValuesFrom) = extract node 
-        member x.visit (node:OWLDataSomeValuesFrom) = extract node 
-        member x.visit (node:OWLDataHasValue) = ()
-        member x.visit (node:OWLObjectAllValuesFrom) = extract node
-        member x.visit (node:OWLObjectSomeValuesFrom) = extract node
-        member x.visit (node:OWLObjectHasValue) = ()
-        member x.visit (node:OWLObjectMinCardinality) = extract node
-        member x.visit (node:OWLObjectExactCardinality) = extract node
-        member x.visit (node:OWLObjectMaxCardinality) = extract node
-        member x.visit (node:OWLObjectHasSelf) = ()
-        member x.visit (node:OWLObjectOneOf) = ()
-        member x.visit (node:OWLDataMinCardinality) = extract node
-        member x.visit (node:OWLDataExactCardinality) = extract node
-        member x.visit (node:OWLDataMaxCardinality) = extract node
-
+        
+        member x.visit (node : OWLObjectComplementOf) = node.getOperand().accept(x)
+        
+        member x.visit (node : OWLObjectUnionOf) = 
+            node.getOperands()
+            |> iter<OWLClass>
+            |> List.iter (fun e -> e.accept (x))
+            ()
+        
+        member x.visit (node : OWLDataAllValuesFrom) = x.extract node SomeOf
+        member x.visit (node : OWLDataSomeValuesFrom) = x.extract node SomeOf
+        member x.visit (node : OWLDataHasValue) = ()
+        member x.visit (node : OWLObjectAllValuesFrom) = x.extract node Only
+        member x.visit (node : OWLObjectSomeValuesFrom) = x.extract node SomeOf
+        member x.visit (node : OWLObjectHasValue) = ()
+        member x.visit (node : OWLObjectMinCardinality) = x.extract node SomeOf
+        member x.visit (node : OWLObjectExactCardinality) = x.extract node SomeOf
+        member x.visit (node : OWLObjectMaxCardinality) = x.extract node SomeOf
+        member x.visit (node : OWLObjectHasSelf) = ()
+        member x.visit (node : OWLObjectOneOf) = ()
+        member x.visit (node : OWLDataMinCardinality) = x.extract node SomeOf
+        member x.visit (node : OWLDataExactCardinality) = x.extract node SomeOf
+        member x.visit (node : OWLDataMaxCardinality) = x.extract node SomeOf
 
 let extractIri ex = ex |> List.map Uri.fromHasUri
 
-let objectProperties ctx (c : OWLClass) = 
-    let px = propertyExtractor() :> OWLClassExpressionVisitor
-     
-    px.visit(c)
-    printfn "Visited: %A" (px)
-     
-    let rangeOf (c:OWLClassExpression) (p:OWLObjectPropertyExpression) = [
-        let common = ctx.Reasoner.getObjectPropertyRanges(p,true).getFlattened() |> iter<OWLClass>
-        let possible c = 
-            ctx.DataFactory.getOWLObjectSomeValuesFrom (p, c)
-        for c in common do
-            yield! ctx.Reasoner.getEquivalentClasses(c).getEntities() 
-                    |> iter<OWLClass>
-                    |> List.filter (fun c ->  ctx.Reasoner.isSatisfiable(possible c))   
-            yield! ctx.Reasoner.getSubClasses(c,false).getFlattened()
-                    |> iter<OWLClass>
-                    |> List.rev
-                    |> Seq.filter (fun c -> ctx.Reasoner.isSatisfiable(possible c))   
-    ]
-    
-    let inClosure (cx : OWLClass list) = cx |> List.filter (fun c -> ctx.Ontology.containsEntityInSignature (c, true))
-    
-    let cardinality ch (p:OWLProperty) =  
-        match ch with 
-        | _ -> Cardinality.Unspecified
-
-    ctx.ObjectDomain
-    |> Map.find c
-    |> Seq.map (fun (ch, p) -> 
-           (Uri.fromHasUri p, ch, 
-            { Range = 
-                  rangeOf c p
-                  |> inClosure
-                  |> extractIri
-                  |> Set.ofList
-              Cardinality = cardinality ch p }))
-
+let objectProperties ctx (c : OWLClass) =
+  let firstCharacteristic cx = cx |> Seq.map (fun (_,x,_) -> x) |> Seq.head
+  let constraints cx = cx |> Seq.map (fun (_,_,x) -> x) |> List.ofSeq
+  let px = propertyExtractor ctx
+  (px :> OWLClassExpressionVisitor).visit(c)
+  px.Extracted ()
+  |> Seq.groupBy (fun (k,_,_) -> k)
+  |> Seq.map (fun (k, cx) -> (k,firstCharacteristic cx,constraints cx))
+  |> Set.ofSeq
+  
 let subTypes ctx (c : OWLClass) = 
     ctx.Reasoner.getSubClasses(c, true).getFlattened()
     |> iter<OWLClass>
@@ -214,26 +178,26 @@ let superTypes ctx (c : OWLClass) =
     |> iter<OWLClass>
     |> List.map Uri.fromHasUri
 
-let labels ctx (e:OWLEntity) =
-    e.getAnnotations(ctx.Ontology)
+let labels ctx (e : OWLEntity) = 
+    e.getAnnotations (ctx.Ontology)
     |> iter<OWLAnnotation>
     |> List.filter (fun a -> a.getProperty().isLabel())
-    |> List.map (fun a -> Literal.Literal (string (a.getValue())))
+    |> List.map (fun a -> Literal.Literal(string (a.getValue ())))
 
-let comments ctx (e:OWLEntity) =
-    e.getAnnotations(ctx.Ontology)
+let comments ctx (e : OWLEntity) = 
+    e.getAnnotations (ctx.Ontology)
     |> iter<OWLAnnotation>
     |> List.filter (fun a -> a.getProperty().isComment())
-    |> List.map (fun a -> Literal.Literal (string (a.getValue())))
+    |> List.map (fun a -> Literal.Literal(string (a.getValue ())))
 
 type OntologyManager() = 
-    member x.manager = OWLManager.createOWLOntologyManager()
+    member x.manager = OWLManager.createOWLOntologyManager ()
     
     member x.loadFile (p : string) = 
         try 
             Ontology(x.manager.loadOntologyFromOntologyDocument (java.io.File(p))) |> x.reason
         with :? OWLOntologyAlreadyExistsException as e -> 
-            Ontology(x.manager.getOntology (e.getDocumentIRI())) |> x.reason
+            Ontology(x.manager.getOntology (e.getDocumentIRI ())) |> x.reason
     
     member private x.reason o = 
         match o with
@@ -250,7 +214,7 @@ type OntologyManager() =
         { Uri = Uri.Uri(iri)
           Label = labels ctx cs
           Comments = comments ctx cs
-          ObjectProperties = objectProperties ctx cs |> Set.ofSeq
+          ObjectProperties = objectProperties ctx cs
           DataProperties = Set.empty
           EquivalentClasses = 
               ctx.Reasoner.getEquivalentClasses(cs).getEntities()

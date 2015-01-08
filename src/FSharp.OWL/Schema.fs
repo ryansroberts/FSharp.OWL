@@ -67,30 +67,6 @@ open VDS.RDF.Query
 open VDS.RDF.Parsing
 open VDS.RDF.Query.Datasets
 
-type Cardinality =
-| Unspecified
-| Minimum of int
-| Maximum of int
-| Range of int * int
-| Exactly of int
-
-type PropertyRange = {
-  Range : Set<Uri>
-  Cardinality : Cardinality
-}
-
-[<System.Flags>]
-type Characteristics = 
-| None              = 0b000000000
-| Functional        = 0b000000001
-| InverseFunctional = 0b000000010
-| Transitive        = 0b000000100
-| Symmetric         = 0b000010000
-| Asymmetric        = 0b000100000
-| Reflexive         = 0b001000000
-| Irreflexive       = 0b010000000
-
-type Property = Uri *  PropertyRange  
 
 type Constraint =
 | SomeOf of Set<Uri>
@@ -99,12 +75,20 @@ type Constraint =
 | Minimum of int * Uri
 | Maximum of int * Uri
 | Exactly of int * Uri
+| Further of Constraint
 
+[<System.Flags>]
+type Characteristics = 
+| None              = 0b000000000
+| Functional        = 0b000000001
+| InverseFunctional = 0b000000010
+| Transitive        = 0b000000100
+| Symmetric         = 0b000001000
+| Asymmetric        = 0b000010000
+| Reflexive         = 0b000100000
+| Irreflexive       = 0b001000000
 
-type ClassExpression =
-| Union of ClassExpression
-| HasValue of Uri
-| SomeValuesFrom of Uri
+type Property = Uri * Characteristics * (Constraint list) 
 
 type ResultGraph (g:IGraph) =
   let prefix q = """prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -136,7 +120,7 @@ type Class = {
     Uri : Uri 
     Label : Literal list
     Comments : Literal list
-    ObjectProperties : Set<(Uri * Characteristics * PropertyRange)>
+    ObjectProperties : Set<ObjectProperty>
     DataProperties : Set<(Uri * Set<Uri>)>
     Subtypes : Set<Uri>
     Supertypes : Set<Uri>
