@@ -62,53 +62,62 @@ let className (ns : prefixes) (cls : Schema.Class) =
     if uris.Length = 0 then typeName ns cls.Uri
     else sprintf "%s≡%s" (typeName ns cls.Uri) (uris |> String.concat "≡")
 
-let restrictionName (ns : prefixes) (p : Schema.Property) =
-    let (uri,c) = p >>> "restriction %A"
+let restrictionDocs (ns : prefixes) (p : Schema.Property) =
+    let (uri,_,cx) = p >>> "restriction %A"
     let rec restrictionName c = [
         match c with
-        | uri,Constraint.Only rx -> yield sprintf "%s only %s" (typeName ns uri) (rx
+        | uri,Constraint.Only rx -> yield sprintf "only (%s)" (rx
                                                 |> Seq.map (typeName ns)
                                                 |> Seq.reduce (sprintf "%s or %s"))
-        | uri,Constraint.SomeOf rx -> yield sprintf "%s some %s" (typeName ns uri) (rx
+        | uri,Constraint.SomeOf rx -> yield sprintf "some (%s)" (rx
                                                 |> Seq.map (typeName ns)
                                                 |> Seq.reduce (sprintf "%s or %s"))
         | uri,Constraint.Further c -> yield! restrictionName (uri,c)
     ]
-    restrictionName p |> List.reduce (+) >>> "Restriction %A"
+    let eachConstraint c = restrictionName (uri,c)
+    cx
+    |> List.map eachConstraint
+    |> List.concat
+    |> List.reduce (fun a r -> a + "\r" + r)
+    |> (sprintf """
+           <summary>
+                Property uri %s
+                %s
+           </summary>
+       """ (string uri))
+    
 
 let vdsUri (g : IGraph) (u : Schema.Uri) =
     match u with
     | Uri.Uri(s) -> g.CreateUriNode(System.Uri s)
     | Uri.QName(p, n) -> g.CreateUriNode(System.Uri(p + n))
 
-let objectProperty (ctx : GenerationContext) (cx : (Characteristics * Constraint) seq) =
-  let restriction = ProvidedTypeDefinition(restrictionName ctx.ns,(ctx.uri,cs |> Seq.map snd))
-  let n = typeName ctx.ns ctx.uri
-  let field = ProvidedField("_" + n, restriction)
-  field.SetFieldAttributes(FieldAttributes.Private)
-   
- (* 
-    let one p =
-        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns p, Some typeof<obj>)
-        let n = typeName ctx.ns ctx.uri
-        let field = ProvidedField("_" + n, restriction)
-        field.SetFieldAttributes(FieldAttributes.Private)
-        let prop = ProvidedProperty(n, restriction, GetterCode = (fun [this] -> <@@ Expr.FieldGet(this, field) @@>))
-        (prop, field, restriction)
+let objectProperty (ctx : GenerationContext) (p:Schema.ObjectProperty) =
+  let (uri,ch,_) = p
 
-    let some p =
-        let restriction = ProvidedTypeDefinition(restrictionName ctx.ns p, Some typeof<obj>)
-        let lt = typedefof<List<_>>.MakeGenericType([| restriction :> System.Type |])
-        restriction.AddMember lt
-        let n = typeName ctx.ns ctx.uri
-        let field = ProvidedField("_" + n, lt)
-        field.SetFieldAttributes(FieldAttributes.Private)
-        let prop = ProvidedProperty(n, lt, GetterCode = (fun [this] -> <@@ Expr.FieldGet(this, field) @@>))
-        (prop, field, restriction)
+  let restriction  =
+    let restriction = ProvidedTypeDefinition(typeName ctx.ns uri,Some typeof<obj>)
+    restriction.AddXmlDoc <| restrictionDocs ctx.ns p
+    restriction
 
-    match cx |> Seq.head with
-    | Characteristics.Functional,_ -> one p
-    | _ -> some p *)
+  let one p = 
+    let n = typeName ctx.ns ctx.uri
+    let field = ProvidedField("_" + n, restriction)
+    field.SetFieldAttributes(FieldAttributes.Private)
+    let prop = ProvidedProperty(n, restriction, GetterCode = (fun [this] -> <@@ Expr.FieldGet(this, field) @@>))
+    (prop, field, restriction)
+  let some p =
+    let lt = typedefof<List<_>>.MakeGenericType([| restriction :> System.Type |])
+    restriction.AddMember lt
+    let n = typeName ctx.ns ctx.uri
+    let field = ProvidedField("_" + n, lt)
+    field.SetFieldAttributes(FieldAttributes.Private)
+    let prop = ProvidedProperty(n, lt, GetterCode = (fun [this] -> <@@ Expr.FieldGet(this, field) @@>))
+    (prop, field, restriction)
+
+  match ch with
+    | Characteristics.Functional -> one p
+    | _ -> some p
 
 let individualType (ctx : GenerationContext) cs (rx : (ProvidedProperty * ProvidedField) list) =
     let t = ProvidedTypeDefinition("Individual", Some typeof<Individual>)
@@ -166,9 +175,9 @@ let rec classNode (ctx : GenerationContext) =
         let op = ProvidedTypeDefinition("ObjectProperties", Some typeof<obj>)
         cls.AddMember op
         (fun () ->
-         [ for kv in cs.ObjectProperties do
-           match kv.Key,kv.Value with
-           | uri,p -> yield objectPropertyType { ctx with uri = uri } p ])
+         [ for p in cs.ObjectProperties do
+             let (uri,_,_) = p
+             yield objectPropertyType { ctx with uri = uri } p ])
         |> op.AddMembersDelayed
     if cs.DataProperties.Any() then
         let op = ProvidedTypeDefinition("DataProperties", Some typeof<obj>)
@@ -181,12 +190,11 @@ let rec classNode (ctx : GenerationContext) =
     cls.AddMember op
     (fun () ->
     [ let rx =
-        [ for kv in cs.ObjectProperties do
-            match kv.Key,kv.Value with
-            | uri,cx ->
-                    let (prop, field, restriction) = objectProperty { ctx with uri = uri } cx
-                    op.AddMember restriction
-                    yield (prop, field) ]
+        [ for p in cs.ObjectProperties do
+            let (uri,_,_) = p  
+            let (prop, field, restriction) = objectProperty { ctx with uri = uri } p
+            op.AddMember restriction
+            yield (prop, field) ]
 
       let (ctor, individualType) = individualType ctx cs rx
       let individuals =
